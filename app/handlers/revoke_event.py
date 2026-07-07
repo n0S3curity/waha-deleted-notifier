@@ -48,6 +48,9 @@ def _extract_deleted_message_id(before: dict) -> tuple[str, list[str]]:
     the actual deleted message's ID is buried in:
         _data.Message.protocolMessage.key.{ID, fromMe, participant}
 
+    NOWEB engine uses the same idea but a differently-cased path:
+        _data.message.protocolMessage.key.{id, fromMe, participant}
+
     Key insight: always use before.from (the outer chat JID) as the chat portion
     of the reconstructed ID — NOT proto_key.remoteJID.  For DMs, remoteJID is the
     *sender's* @lid, which differs from before.from (the chat @lid stored in DB).
@@ -66,6 +69,13 @@ def _extract_deleted_message_id(before: dict) -> tuple[str, list[str]]:
         .get("protocolMessage", {})
         .get("key", {})
     )
+    # NOWEB: _data.message.protocolMessage.key (lowercase 'message')
+    if not proto_key:
+        proto_key = (
+            _data.get("message", {})
+            .get("protocolMessage", {})
+            .get("key", {})
+        )
     # WEBJS: _data.protocolMessageKey (before == payload.after; before is null)
     if not proto_key:
         proto_key = _data.get("protocolMessageKey") or {}

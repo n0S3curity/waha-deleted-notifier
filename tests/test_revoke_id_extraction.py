@@ -131,6 +131,40 @@ def test_webjs_dm_uses_protocol_message_key():
     assert stored_id in [primary] + fallbacks
 
 
+# ---------------------------------------------------------------------------
+# NOWEB DM case — real payload from a Raspberry Pi / WAHA Core NOWEB session.
+# 'before' is null so the code uses payload.after (the revoke protocol
+# message) as 'before'. The original message's short ID lives in
+# _data.message.protocolMessage.key.id (lowercase 'message', unlike GOWS'
+# capitalised 'Message').
+# ---------------------------------------------------------------------------
+def test_noweb_dm_uses_lowercase_message_protocol_key():
+    before = {
+        "id": "false_9453608898815@lid_AC56D49E8482819978F4FC1D35E4968D",  # wrong (revoke msg)
+        "from": "9453608898815@lid",
+        "_data": {
+            "key": {
+                "remoteJid": "9453608898815@lid",
+                "fromMe": False,
+                "id": "AC56D49E8482819978F4FC1D35E4968D",
+            },
+            "message": {
+                "protocolMessage": {
+                    "key": {
+                        "remoteJid": "13490660061418@lid",  # bot's own lid, not the chat
+                        "fromMe": True,
+                        "id": "AC400851E62C2108632BD5A5A2F781CA",  # original message's short ID
+                    },
+                    "type": "REVOKE",
+                }
+            },
+        },
+    }
+    primary, fallbacks = _extract_deleted_message_id(before)
+    stored_id = "false_9453608898815@lid_AC400851E62C2108632BD5A5A2F781CA"
+    assert stored_id in [primary] + fallbacks
+
+
 def test_proto_key_missing_short_id_falls_back_to_before_id():
     before = _make_before(
         before_id="false_972585884133@c.us_3A37A7B2C8D1EF0887FD",
