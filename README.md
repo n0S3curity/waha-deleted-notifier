@@ -4,20 +4,33 @@ A production-ready Python/FastAPI service that listens to [WAHA](https://waha.de
 
 > **WAHA version notice**
 >
-> WAHA Core (free) **can** run this bot with two limitations:
-> - Run **two separate WAHA Core instances** (one per session) instead of one Plus container
-> - Notifications will be **text-only** — deleted images and files will not be forwarded
+> This bot is designed to run fully on **WAHA Core (free)** with a single WhatsApp
+> account and a single WAHA instance:
+> - **One session** both is monitored (`WAHA_LISTEN_SESSION`) and sends alerts
+>   (`WAHA_NOTIFY_SESSION`) — set them to the same value.
+> - Notifications are **text-only** by default (`SEND_MEDIA_ATTACHMENTS=false`) —
+>   deleted images/files are described in the alert text, not attached, since
+>   `sendImage`/`sendFile` are Plus/Pro-only endpoints.
+> - Recommended alert destination: your own **"Message Yourself"** self-chat
+>   (your account's own `@c.us` JID), so alerts stay private no matter which
+>   group or DM the deleted message came from.
 >
-> **WAHA Plus/Pro** gives full functionality: both sessions in one container and media attachments forwarded.
+> **WAHA Plus/Pro** additionally lets you run two sessions (separate listen/notify
+> accounts) in one container and forward the actual deleted image/file by
+> setting `SEND_MEDIA_ATTACHMENTS=true`.
 >
-> Specific Plus-only features used by this bot:
 > | Feature | Core (free) | Plus/Pro |
 > |---|---|---|
+> | Single session, self-notify | ✓ | ✓ |
 > | Multiple sessions in one container | ✗ (run 2 instances) | ✓ |
-> | Send images (`POST /api/sendImage`) | ✗ | ✓ |
-> | Send files (`POST /api/sendFile`) | ✗ | ✓ |
+> | Send images (`POST /api/sendImage`) | ✗ | ✓ (`SEND_MEDIA_ATTACHMENTS=true`) |
+> | Send files (`POST /api/sendFile`) | ✗ | ✓ (`SEND_MEDIA_ATTACHMENTS=true`) |
 >
 > See the [WAHA pricing page](https://waha.devlike.pro/) for details.
+>
+> **Raspberry Pi / ARM64:** the default `devlikeapro/waha` image has no arm64
+> manifest. Use `devlikeapro/waha:noweb-arm` instead (lightweight, no bundled
+> Chromium — well suited to a Pi).
 
 ---
 
@@ -71,9 +84,10 @@ archived_chats(chat_id, is_archived, updated_at)
 
 - Docker + Docker Compose
 - A running WAHA instance (WEBJS, NOWEB, or GOWS engine)
-- Two WhatsApp accounts linked as WAHA sessions:
-  - **Listen session** — the account whose incoming messages are monitored
-  - **Notify session** — the account that sends deletion notifications
+- One WhatsApp account linked as a WAHA session, used for both:
+  - **Listening** — its incoming messages are monitored for deletions
+  - **Notifying** — it sends the deletion alerts to your chosen destination
+  (WAHA Plus/Pro users may instead use two separate accounts/sessions.)
 
 ---
 
@@ -90,20 +104,29 @@ Open `.env` and fill in every field. Here is what each one means and where to fi
 | Variable | How to get it |
 |---|---|
 | `WAHA_BASE_URL` | URL of your WAHA server, e.g. `http://localhost:3000` |
-| `WAHA_API_KEY` | Set in your WAHA `docker-compose.yml` as `WAHA_API_KEY`, or visible in the WAHA Dashboard top-right menu |
-| `WAHA_LISTEN_SESSION` | The name you give the session linked to the phone you want to monitor (you choose this name when creating the session in WAHA Dashboard) |
-| `WAHA_NOTIFY_SESSION` | The name of the session that sends notifications (often `default`) |
-| `NOTIFY_GROUP_ID` | The WhatsApp group JID — see below |
+| `WAHA_API_KEY` | Set in your WAHA `docker-compose.yml`/`docker run` as `WAHA_API_KEY`, or visible in the WAHA Dashboard top-right menu |
+| `WAHA_LISTEN_SESSION` | The name you give your session (you choose this when creating it — e.g. `default`) |
+| `WAHA_NOTIFY_SESSION` | On WAHA Core (free), set this to the **same value** as `WAHA_LISTEN_SESSION` |
+| `NOTIFY_GROUP_ID` | Where alerts are sent — see below |
 | `BOT_WEBHOOK_URL` | The URL WAHA uses to call this bot — see below |
+| `SEND_MEDIA_ATTACHMENTS` | `false` for WAHA Core (free) — text-only. `true` requires Plus/Pro |
 
 **Finding `NOTIFY_GROUP_ID`:**
 
-After your listen session is connected, run:
+Recommended: use your own account's JID (the session's own number) so alerts go to your "Message Yourself" self-chat — private, and independent of which group/DM the deletion happened in. Get it via:
+```bash
+curl -s http://localhost:3000/api/sessions/{WAHA_LISTEN_SESSION} \
+  -H "X-Api-Key: YOUR_API_KEY" | python3 -c "import sys,json; print(json.load(sys.stdin)['me']['id'])"
+```
+That prints something like `972501234567@c.us` — paste it as `NOTIFY_GROUP_ID`.
+
+Alternatively, to send alerts into a specific WhatsApp **group** instead, run:
 ```bash
 curl -s http://localhost:3000/api/{WAHA_LISTEN_SESSION}/groups \
   -H "X-Api-Key: YOUR_API_KEY" | python3 -m json.tool | grep -A2 '"subject"'
 ```
-Look for your group by name. The `"id"` field ending in `@g.us` is the JID — paste it as `NOTIFY_GROUP_ID`.
+Look for your group by name. The `"id"` field ending in `@g.us` is the JID.
+Note: any group JID here broadcasts deletion alerts to everyone in that group.
 
 **Finding `BOT_WEBHOOK_URL`:**
 
@@ -156,8 +179,9 @@ Open the WAHA Dashboard at `http://localhost:3000/dashboard` and scan the QR cod
 | `WAHA_BASE_URL` | `http://localhost:3000` | WAHA server URL |
 | `WAHA_API_KEY` | _(required)_ | WAHA API key (`X-Api-Key` header) |
 | `WAHA_LISTEN_SESSION` | `listener` | Session that receives webhook events |
-| `WAHA_NOTIFY_SESSION` | `default` | Session that sends notifications |
-| `NOTIFY_GROUP_ID` | _(required)_ | WhatsApp group JID, e.g. `120363000000000000@g.us` |
+| `WAHA_NOTIFY_SESSION` | `default` | Session that sends notifications — same as `WAHA_LISTEN_SESSION` on WAHA Core |
+| `NOTIFY_GROUP_ID` | _(required)_ | JID that receives alerts — your own `@c.us` JID (self-chat, recommended) or a group `@g.us` JID |
+| `SEND_MEDIA_ATTACHMENTS` | `false` | `true` attaches deleted images/files (requires WAHA Plus/Pro); `false` describes them in text |
 | `BOT_WEBHOOK_URL` | _(required)_ | URL WAHA uses to call this bot, e.g. `http://192.168.1.10:8001` |
 | `DAYS_TO_SAVE_FILES` | `7` | Days to keep captured media before cleanup |
 | `MEDIA_DIR` | `/data/media` | Path for downloaded media (inside Docker) |
@@ -187,6 +211,8 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 ## Notification Format (Hebrew)
 
+With the default `SEND_MEDIA_ATTACHMENTS=false`, every scenario below — including deleted images/files — is sent as a single **text** message; the image/file rows describe the attachment in words rather than forwarding the actual file.
+
 | Scenario | Example |
 |---|---|
 | Text – group | `הודעה נמחקה ע"י Moshe בקבוצה "Family" עם התוכן: שלום` |
@@ -214,8 +240,8 @@ Live integration tests (require two connected WAHA sessions) are in `wet_tests/`
 | Purpose | Method | Path |
 |---|---|---|
 | Send text notification | `POST` | `/api/sendText` |
-| Attach deleted photo _(Plus/Pro)_ | `POST` | `/api/sendImage` |
-| Attach deleted file _(Plus/Pro)_ | `POST` | `/api/sendFile` |
+| Attach deleted photo _(`SEND_MEDIA_ATTACHMENTS=true`, Plus/Pro)_ | `POST` | `/api/sendImage` |
+| Attach deleted file _(`SEND_MEDIA_ATTACHMENTS=true`, Plus/Pro)_ | `POST` | `/api/sendFile` |
 | Verify contact exists | `GET` | `/api/contacts/check-exists` |
 | Fetch contact name | `GET` | `/api/contacts` |
 | Fetch group name | `GET` | `/api/{session}/groups/{id}` |
@@ -230,7 +256,7 @@ Live integration tests (require two connected WAHA sessions) are in `wet_tests/`
 |---|---|
 | No notifications at all | Confirm `NOTIFY_GROUP_ID` is correct and the notify session is connected in WAHA Dashboard |
 | "Content unavailable" in notifications | `message.any` must fire before `message.revoked` — check WAHA webhook events include `message.any` |
-| Media not attached | Requires WAHA Plus/Pro; ensure `downloadMedia: true` is set in WAHA webhook config |
+| Deleted image/file shows as text, not attached | Expected on WAHA Core with the default `SEND_MEDIA_ATTACHMENTS=false`. To attach real files instead, set `SEND_MEDIA_ATTACHMENTS=true` (requires WAHA Plus/Pro) |
 | `WAHA error 401` | Wrong or missing `WAHA_API_KEY` |
 | Duplicate notifications | Confirm `WEBHOOK_DEDUP_ENABLED=true` (default) |
 | Notifications from archived chats | Subscribe to `chat.archive` in WAHA webhook config (done automatically by `setup.sh`) |

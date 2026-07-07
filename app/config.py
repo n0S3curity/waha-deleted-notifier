@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     db_path: str = "/data/bot.db"
     days_to_save_files: int = 7
 
+    # Media attachments in notifications (requires WAHA Plus/Pro sendImage/sendFile).
+    # False (default) = text-only notifications, safe for WAHA Core (free).
+    send_media_attachments: bool = False
+
     # Dedup
     webhook_dedup_enabled: bool = True
 

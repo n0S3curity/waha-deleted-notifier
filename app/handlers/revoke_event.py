@@ -303,7 +303,7 @@ async def handle_revoke(event: dict[str, Any], client: WAHAClient) -> None:
     # Compose + send
     # ------------------------------------------------------------------
     ok = True
-    if has_media and file_path and Path(file_path).exists():
+    if has_media and settings.send_media_attachments and file_path and Path(file_path).exists():
         is_image = bool(mime_type and "image" in mime_type.lower())
         if is_image:
             text = formatter.format_image_deleted(sender_name, caption, is_grp, group_name, is_archived)
@@ -313,29 +313,25 @@ async def handle_revoke(event: dict[str, Any], client: WAHAClient) -> None:
             text = formatter.format_file_deleted(sender_name, filename, caption, is_grp, group_name, is_archived)
             logger.info("sending file notification", notify_target=notify_target, filename=filename, mime_type=mime_type, file_path=file_path)
             ok = await _safe_send_file(client, notify_target, file_path, mime_type, filename or "file", text, session)
-    elif not has_media and body:
-        text = formatter.format_text_deleted(sender_name, body, is_grp, group_name, is_archived)
-        logger.info("sending text notification", notify_target=notify_target, body_preview=body[:200])
-        ok = await _safe_send_text(client, notify_target, text, session)
-    else:
-        # Has media but file not on disk (download may have failed)
-        logger.warning(
-            "media file missing from disk — sending text-only fallback",
-            has_media=has_media,
-            file_path=file_path,
-            file_exists=Path(file_path).exists() if file_path else False,
-            mime_type=mime_type,
-            caption=caption,
-            message_id=message_id,
-        )
-        detail = "(מדיה לא זמינה)"
-        if "image" in (mime_type or ""):
+    elif has_media:
+        # Text-only description of the deleted media — default on WAHA Core (free),
+        # since sendImage/sendFile require Plus/Pro. Also used as a fallback when
+        # attachments are enabled but the file failed to download.
+        if "image" in (mime_type or "").lower():
             text = formatter.format_image_deleted(sender_name, caption, is_grp, group_name, is_archived)
         elif mime_type:
             text = formatter.format_file_deleted(sender_name, filename, caption, is_grp, group_name, is_archived)
         else:
             text = formatter.format_unavailable(sender_name, is_grp, group_name, is_archived)
-        text = f"{text}\n{detail}"
+        logger.info("sending text-only media notification", notify_target=notify_target, mime_type=mime_type, caption=caption)
+        ok = await _safe_send_text(client, notify_target, text, session)
+    elif body:
+        text = formatter.format_text_deleted(sender_name, body, is_grp, group_name, is_archived)
+        logger.info("sending text notification", notify_target=notify_target, body_preview=body[:200])
+        ok = await _safe_send_text(client, notify_target, text, session)
+    else:
+        text = formatter.format_unavailable(sender_name, is_grp, group_name, is_archived)
+        logger.info("sending unavailable notification (no body, no media)", notify_target=notify_target)
         ok = await _safe_send_text(client, notify_target, text, session)
 
     if not ok:
