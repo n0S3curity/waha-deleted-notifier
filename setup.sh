@@ -8,17 +8,23 @@
 set -euo pipefail
 
 # ── Load .env ────────────────────────────────────────────────────────────────
-if [ -f .env ]; then
-    set -a
-    # shellcheck disable=SC1091
-    source .env
-    set +a
-fi
+# Deliberately NOT sourcing .env directly: values like a bcrypt ADMIN_PASSWORD_HASH
+# contain '$' (e.g. $2b$12$...), which bash would try to expand as positional
+# parameters if the file were sourced. Instead, read only the specific keys we
+# need as literal text.
+_env_get() {
+    [ -f .env ] || return 0
+    grep -E "^$1=" .env | tail -n1 | cut -d '=' -f2-
+}
 
 # ── Required variables ───────────────────────────────────────────────────────
+WAHA_BASE_URL="${WAHA_BASE_URL:-$(_env_get WAHA_BASE_URL)}"
 WAHA_BASE_URL="${WAHA_BASE_URL:-http://localhost:3000}"
+WAHA_API_KEY="${WAHA_API_KEY:-$(_env_get WAHA_API_KEY)}"
 WAHA_API_KEY="${WAHA_API_KEY:?ERROR: WAHA_API_KEY is not set in .env}"
+WAHA_LISTEN_SESSION="${WAHA_LISTEN_SESSION:-$(_env_get WAHA_LISTEN_SESSION)}"
 WAHA_LISTEN_SESSION="${WAHA_LISTEN_SESSION:-listener}"
+BOT_WEBHOOK_URL="${BOT_WEBHOOK_URL:-$(_env_get BOT_WEBHOOK_URL)}"
 BOT_WEBHOOK_URL="${BOT_WEBHOOK_URL:?ERROR: BOT_WEBHOOK_URL is not set in .env (e.g. http://192.168.1.10:8001)}"
 
 FULL_WEBHOOK_URL="${BOT_WEBHOOK_URL%/}/webhook/waha"
