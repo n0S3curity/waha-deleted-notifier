@@ -154,6 +154,7 @@ def _sender_from_payload(p: dict, chat_id: str, group: bool) -> tuple[str, Optio
         or p.get("pushname")
         or raw_data.get("notifyName")
         or raw_data.get("pushname")
+        or raw_data.get("pushName")  # NOWEB: _data.pushName (camelCase)
         or info.get("PushName")     # GOWS: push-name lives here
         or None
     )
